@@ -33,6 +33,7 @@ class RaspberryRemoteDaemon
 		int mCliSockFd;
 		unsigned short mSystemCode;
 		unsigned short mUnitCode;
+		unsigned short mDelay;
 		string mRecvStr;
 		rcswitch_cmd_t mCmd;
 		map<unsigned short, bool> mPowerState;

@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 
 #include <netinet/in.h>
 #include <unistd.h>
@@ -14,6 +15,7 @@ RaspberryRemoteDaemon::RaspberryRemoteDaemon()
 	, mCliSockFd(-1)
 	, mSystemCode(0)
 	, mUnitCode(0)
+	, mDelay(0)
 	, mCmd(STATE)
 {
 	mRCSwitch = new RCSwitch();
@@ -80,13 +82,11 @@ void RaspberryRemoteDaemon::serverLoop()
 	{
 		mCliSockFd = accept(mSrvSockFd, reinterpret_cast<sockaddr*>(&cliAddr), &cliLen);
 
-		char buffer[8];
+		char buffer[20];
 		int n = read(mCliSockFd, buffer, sizeof(buffer));
 		cout << "read: " << n << endl;
 		buffer[n] = '\0';
 		cout << "buffer: '" << buffer << "'" << endl;
-		if(buffer[n-1] == '\n')
-			buffer[n-1] = '\0';
 
 		setInput(buffer);
 		if(parseInput())
@@ -101,17 +101,18 @@ void RaspberryRemoteDaemon::serverLoop()
 
 void RaspberryRemoteDaemon::setInput(string inputStr)
 {
-	mRecvStr = inputStr;
+	mRecvStr = inputStr.erase(inputStr.find_last_not_of('\n') + 1);
 }
 
 
 bool RaspberryRemoteDaemon::parseInput()
 {
 	bool isValid = false;
+	mDelay = 0;
 
 	// check if raspberry-remote compatible
 	isValid = true;
-	if(mRecvStr.length() == 8)
+	if(mRecvStr.length() >= 8)
 	{
 		for(int i = 0; i <= 4; i++)
 		{
@@ -122,6 +123,7 @@ bool RaspberryRemoteDaemon::parseInput()
 			}
 		}
 
+		// check whether unit code and cmd are valid
 		if(isValid)
 		{
 			if(mRecvStr[5] == '0' && mRecvStr[6] >= '1' && mRecvStr[6] <= '5' && mRecvStr[7] >= '0' && mRecvStr[7] <= '2')
@@ -135,12 +137,32 @@ bool RaspberryRemoteDaemon::parseInput()
 					case '4': mUnitCode =  2; break;
 					case '5': mUnitCode =  1; break;
 				}
-
 				mCmd = static_cast<rcswitch_cmd_t>(mRecvStr[7] - 0x30);
-
-				printf("string '%s' is raspberry-remote compatible (system code: '%d', unit code: '%d', cmd: '%d')\n", mRecvStr.c_str(), mSystemCode, mUnitCode, mCmd);
-				return true;
 			}
+			else
+			{
+				isValid = false;
+			}
+		}
+
+		// check if delay is given and valid
+		if(isValid)
+		{
+			if(mRecvStr.length() > 8) {
+				stringstream ss(mRecvStr.substr(8, mRecvStr.length() - 8));
+				ss >> mDelay;
+				if(ss.fail())
+				{
+					cerr << "delay value invalid!" << endl;
+					isValid = false;
+				}
+			}
+		}
+
+		if(isValid)
+		{
+			printf("string '%s' is raspberry-remote compatible (system code: '%d', unit code: '%d', cmd: '%d', delay: '%d')\n", mRecvStr.c_str(), mSystemCode, mUnitCode, mCmd, mDelay);
+			return true;
 		}
 	}
 	cout << "string '" << mRecvStr << "' is NOT raspberry-remote compatible" << endl;
