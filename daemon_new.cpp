@@ -92,7 +92,7 @@ void RaspberryRemoteDaemon::serverLoop()
 		if(parseInput())
 		{
 			processInput();
-			dumpPowerState();
+			dumpPowerStateOn();
 		}
 		close(mCliSockFd);
 	}
@@ -208,14 +208,14 @@ unsigned short RaspberryRemoteDaemon::getPlugAddr()
 }
 
 
-void RaspberryRemoteDaemon::dumpPowerState()
+void RaspberryRemoteDaemon::dumpPowerStateOn()
 {
 	cout << __PRETTY_FUNCTION__ << endl;
-	for (map<unsigned short, bool>::iterator it = mPowerState.begin(); it != mPowerState.end(); ++it)
+	for(list<unsigned short>::iterator it = mPowerState.begin(); it != mPowerState.end(); ++it)
 	{
-		unsigned short systemCode = it->first >> 5;
-		unsigned short unitCode   =  it->first & ((1<<5)-1);
-		cout << "\t" << systemCode << "/" << unitCode << " => " << it->second << endl;
+		unsigned short systemCode = *(it) >> 5;
+		unsigned short unitCode   =  *(it) & ((1<<5)-1);
+		cout << "\t" << *it << " (" << systemCode << "/" << unitCode << ")" << endl;
 	}
 
 }
@@ -223,17 +223,30 @@ void RaspberryRemoteDaemon::dumpPowerState()
 
 void RaspberryRemoteDaemon::savePowerState(bool stateOn)
 {
-	mPowerState[getPlugAddr()] = stateOn;
+	if(stateOn)
+	{
+		mPowerState.push_back(getPlugAddr());
+		mPowerState.sort();
+		mPowerState.unique();
+	}
+	else
+	{
+		mPowerState.remove(getPlugAddr());
+	}
 }
 
 
 bool RaspberryRemoteDaemon::getPowerState()
 {
 	bool ret = false;
-	map<unsigned short, bool>::iterator it = mPowerState.find(getPlugAddr());
-
-	if(it != mPowerState.end())
-		ret = it->second;
+	for(list<unsigned short>::iterator it = mPowerState.begin(); it != mPowerState.end(); ++it)
+	{
+		if(*it == getPlugAddr())
+		{
+			ret = true;
+			break;
+		}
+	}
 
 	cout << __PRETTY_FUNCTION__ << " ret: " << ret << endl;
 	return ret;

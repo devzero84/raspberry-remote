@@ -1,4 +1,4 @@
-#include <map>
+#include <list>
 #include <string>
 
 #include "RCSwitch.h"
@@ -20,7 +20,7 @@ class RaspberryRemoteDaemon
 		bool parseInput();
 		void processInput();
 		unsigned short getPlugAddr();
-		void dumpPowerState();
+		void dumpPowerStateOn();
 
 
 	private:
@@ -36,5 +36,5 @@ class RaspberryRemoteDaemon
 		unsigned short mDelay;
 		string mRecvStr;
 		rcswitch_cmd_t mCmd;
-		map<unsigned short, bool> mPowerState;
+		list<unsigned short> mPowerState;
 };
