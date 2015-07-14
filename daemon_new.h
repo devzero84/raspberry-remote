@@ -1,3 +1,6 @@
+#ifndef DAEMON_NEW_H
+#define DAEMON_NEW_H
+
 #include <list>
 #include <string>
 
@@ -24,6 +27,8 @@ class RaspberryRemoteDaemon
 
 
 	private:
+		bool parseDecimalSystemUnitCode();
+		bool parseLegacy();
 		void savePowerState(bool stateOn);
 		bool getPowerState();
 		void writePowerStateToSocket();
@@ -38,3 +43,5 @@ class RaspberryRemoteDaemon
 		rcswitch_cmd_t mCmd;
 		list<unsigned short> mPowerState;
 };
+
+#endif /* DAEMON_NEW_H */

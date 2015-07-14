@@ -1,11 +1,12 @@
 DESCRIPTION = "RCSwitch on Raspberry Pi"
 LICENSE = "GPL"
-VERSION = 1.0
+VERSION = 1.1
 
+CXXFLAGS  = -O2 -march=armv6j -mfpu=vfp -mfloat-abi=hard -pipe
 CXXFLAGS += -Wall
 CXXFLAGS += -lwiringPi
 
-default: daemon
+default: daemon_new
 
 daemon: RCSwitch.o daemon.o
 	$(CXX) -pthread $+ -o $@ $(CXXFLAGS) $(LDFLAGS)
@@ -17,4 +18,4 @@ send: RCSwitch.o send.o
 	$(CXX) $+ -o $@ $(CXXFLAGS) $(LDFLAGS)
 
 clean:
-	rm -f *.o send daemon
+	rm -f *.o send daemon daemon_new

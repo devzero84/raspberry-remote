@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 #include <netinet/in.h>
 #include <unistd.h>
@@ -30,6 +31,8 @@ RaspberryRemoteDaemon::~RaspberryRemoteDaemon()
 
 bool RaspberryRemoteDaemon::init()
 {
+	cout << __PRETTY_FUNCTION__ << endl;
+
 	if(wiringPiSetup() == WPI_MODE_UNINITIALISED)
 		return false;
 
@@ -75,6 +78,8 @@ bool RaspberryRemoteDaemon::init()
 
 void RaspberryRemoteDaemon::serverLoop()
 {
+	cout << __PRETTY_FUNCTION__ << endl;
+
 	struct sockaddr_in cliAddr;
 	unsigned int cliLen = sizeof(cliAddr);
 
@@ -82,11 +87,13 @@ void RaspberryRemoteDaemon::serverLoop()
 	{
 		mCliSockFd = accept(mSrvSockFd, reinterpret_cast<sockaddr*>(&cliAddr), &cliLen);
 
+		cout << __PRETTY_FUNCTION__ << endl;
+
 		char buffer[20];
 		int n = read(mCliSockFd, buffer, sizeof(buffer));
-		cout << "read: " << n << endl;
+		cout << "\tread: " << n << endl;
 		buffer[n] = '\0';
-		cout << "buffer: '" << buffer << "'" << endl;
+		cout << "\tbuffer: '" << buffer << "'" << endl;
 
 		setInput(buffer);
 		if(parseInput())
@@ -105,78 +112,139 @@ void RaspberryRemoteDaemon::setInput(string inputStr)
 }
 
 
-bool RaspberryRemoteDaemon::parseInput()
+bool RaspberryRemoteDaemon::parseDecimalSystemUnitCode()
 {
-	bool isValid = false;
-	mDelay = 0;
+	cout << __PRETTY_FUNCTION__ << endl;
 
-	// check if raspberry-remote compatible
-	isValid = true;
-	if(mRecvStr.length() >= 8)
+	if(mRecvStr.length() >= 5 && mRecvStr.length() <= 11)
+	{
+		istringstream buf(mRecvStr);
+		vector<string> v;
+
+		for(string token; getline(buf, token, '/'); )
+		{
+			v.push_back(token);
+		}
+
+		if(v.size() >= 3)
+		{
+			unsigned short systemCode, unitCode, cmd;
+			unsigned short delay = 0;
+			vector<string>::iterator it = v.begin();
+			stringstream ss;
+			ss.exceptions(ios::failbit);
+
+			try
+			{
+				ss.str(*it++);
+				ss >> systemCode;
+				ss.clear();
+
+				ss.str(*it++);
+				ss >> unitCode;
+				ss.clear();
+
+				ss.str(*it++);
+				ss >> cmd;
+
+				if(it != v.end())
+				{
+					ss.clear();
+					ss.str(*it++);
+					ss >> delay;
+				}
+			}
+			catch(...)
+			{
+				return false;
+			}
+
+			if( systemCode >= 0 && systemCode <= 31 &&
+				unitCode >= 0 && unitCode <= 31 &&
+				cmd >= 0 && cmd <= 2 &&
+				delay >= 0 && delay <= 999 )
+			{
+				mSystemCode = systemCode;
+				mUnitCode = unitCode;
+				mCmd = static_cast<rcswitch_cmd_t>(cmd);
+				mDelay = delay;
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+
+bool RaspberryRemoteDaemon::parseLegacy()
+{
+	cout << __PRETTY_FUNCTION__ << endl;
+
+	if(mRecvStr.length() >= 8 && mRecvStr.length() <= 11)
 	{
 		for(int i = 0; i <= 4; i++)
 		{
 			if(mRecvStr[i] != '0' && mRecvStr[i] != '1')
-			{
-				isValid = false;
-				break;
-			}
+				return false;
 		}
 
 		// check whether unit code and cmd are valid
-		if(isValid)
+		if(!(mRecvStr[5] == '0' && mRecvStr[6] >= '1' && mRecvStr[6] <= '5' && mRecvStr[7] >= '0' && mRecvStr[7] <= '2'))
+			return false;
+
+		mSystemCode = static_cast<unsigned short>(bitset<5>(mRecvStr.substr(0, 5)).to_ulong());
+		switch(mRecvStr[6])
 		{
-			if(mRecvStr[5] == '0' && mRecvStr[6] >= '1' && mRecvStr[6] <= '5' && mRecvStr[7] >= '0' && mRecvStr[7] <= '2')
-			{
-				mSystemCode = static_cast<unsigned short>(bitset<5>(mRecvStr.substr(0, 5)).to_ulong());
-				switch(mRecvStr[6])
-				{
-					case '1': mUnitCode = 16; break;
-					case '2': mUnitCode =  8; break;
-					case '3': mUnitCode =  4; break;
-					case '4': mUnitCode =  2; break;
-					case '5': mUnitCode =  1; break;
-				}
-				mCmd = static_cast<rcswitch_cmd_t>(mRecvStr[7] - 0x30);
-			}
-			else
-			{
-				isValid = false;
-			}
+			case '1': mUnitCode = 16; break;
+			case '2': mUnitCode =  8; break;
+			case '3': mUnitCode =  4; break;
+			case '4': mUnitCode =  2; break;
+			case '5': mUnitCode =  1; break;
+		}
+		mCmd = static_cast<rcswitch_cmd_t>(mRecvStr[7] - 0x30);
+
+		// check if delay is given and valid, otherwise set to 0
+		if(mRecvStr.length() > 8)
+		{
+			stringstream ss(mRecvStr.substr(8, mRecvStr.length() - 8));
+			ss >> mDelay;
+			if(ss.fail())
+				return false;
+		}
+		else
+		{
+			mDelay = 0;
 		}
 
-		// check if delay is given and valid
-		if(isValid)
-		{
-			if(mRecvStr.length() > 8) {
-				stringstream ss(mRecvStr.substr(8, mRecvStr.length() - 8));
-				ss >> mDelay;
-				if(ss.fail())
-				{
-					cerr << "delay value invalid!" << endl;
-					isValid = false;
-				}
-			}
-		}
-
-		if(isValid)
-		{
-			printf("string '%s' is raspberry-remote compatible (system code: '%d', unit code: '%d', cmd: '%d', delay: '%d')\n", mRecvStr.c_str(), mSystemCode, mUnitCode, mCmd, mDelay);
-			return true;
-		}
+		return true;
 	}
-	cout << "string '" << mRecvStr << "' is NOT raspberry-remote compatible" << endl;
-	isValid = false;
-
-	// TODO: other protocols
 
 	return false;
+}
+
+
+bool RaspberryRemoteDaemon::parseInput()
+{
+	cout << __PRETTY_FUNCTION__ << endl;
+
+	if( parseDecimalSystemUnitCode() || parseLegacy() )
+	{
+		printf("\tmRecvStr '%s' is valid (system code: '%d', unit code: '%d', cmd: '%d', delay: '%d')\n", mRecvStr.c_str(), mSystemCode, mUnitCode, mCmd, mDelay);
+		return true;
+	}
+	else
+	{
+		cout << "\tmRecvStr '" << mRecvStr << "' is NOT valid!" << endl;
+		return false;
+	}
 }
 
 
 void RaspberryRemoteDaemon::processInput()
 {
 	cout << __PRETTY_FUNCTION__ << endl;
+
 	char* systemCodePtr = const_cast<char*>(bitset<5>(mSystemCode).to_string().c_str());
 
 	switch(mCmd)
@@ -202,8 +270,11 @@ void RaspberryRemoteDaemon::processInput()
 
 unsigned short RaspberryRemoteDaemon::getPlugAddr()
 {
+	cout << __PRETTY_FUNCTION__ << endl;
+
 	unsigned short plugAddr = (mSystemCode<<5) | mUnitCode;
-	cout << __PRETTY_FUNCTION__ << " plugAddr: " << plugAddr << endl;
+
+	cout << "\t" << plugAddr << endl;
 	return plugAddr;
 }
 
@@ -211,10 +282,11 @@ unsigned short RaspberryRemoteDaemon::getPlugAddr()
 void RaspberryRemoteDaemon::dumpPowerStateOn()
 {
 	cout << __PRETTY_FUNCTION__ << endl;
+
 	for(list<unsigned short>::iterator it = mPowerState.begin(); it != mPowerState.end(); ++it)
 	{
 		unsigned short systemCode = *(it) >> 5;
-		unsigned short unitCode   =  *(it) & ((1<<5)-1);
+		unsigned short unitCode   = *(it) & ((1<<5)-1);
 		cout << "\t" << *it << " (" << systemCode << "/" << unitCode << ")" << endl;
 	}
 
@@ -223,6 +295,8 @@ void RaspberryRemoteDaemon::dumpPowerStateOn()
 
 void RaspberryRemoteDaemon::savePowerState(bool stateOn)
 {
+	cout << __PRETTY_FUNCTION__ << endl;
+
 	if(stateOn)
 	{
 		mPowerState.push_back(getPlugAddr());
@@ -238,23 +312,24 @@ void RaspberryRemoteDaemon::savePowerState(bool stateOn)
 
 bool RaspberryRemoteDaemon::getPowerState()
 {
-	bool ret = false;
+	cout << __PRETTY_FUNCTION__ << endl;
+
 	for(list<unsigned short>::iterator it = mPowerState.begin(); it != mPowerState.end(); ++it)
 	{
 		if(*it == getPlugAddr())
 		{
-			ret = true;
-			break;
+			return true;
 		}
 	}
 
-	cout << __PRETTY_FUNCTION__ << " ret: " << ret << endl;
-	return ret;
+	return false;
 }
 
 
 void RaspberryRemoteDaemon::writePowerStateToSocket()
 {
+	cout << __PRETTY_FUNCTION__ << endl;
+
 	char powerState = getPowerState() ? '1' : '0';
 	write(mCliSockFd, &powerState, 1);
 }

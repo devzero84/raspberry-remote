@@ -1,4 +1,8 @@
-send
 daemon
+daemon_new
+send
+.cproject
+.project
+.settings
 *.o
 *.swp
