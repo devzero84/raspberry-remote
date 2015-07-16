@@ -6,7 +6,6 @@
 #include <vector>
 
 #include <netinet/in.h>
-#include <unistd.h>
 
 #include "daemon_new.h"
 
@@ -236,8 +235,9 @@ bool RaspberryRemoteDaemon::parseInput()
 	else
 	{
 		cout << "\tmRecvStr '" << mRecvStr << "' is NOT valid!" << endl;
-		return false;
 	}
+
+	return false;
 }
 
 
@@ -335,8 +335,52 @@ void RaspberryRemoteDaemon::writePowerStateToSocket()
 }
 
 
-int main()
+bool RaspberryRemoteDaemon::doFork()
 {
+	pid_t pid = fork();
+
+	if(pid > 0)
+		_exit(0);
+	else if(pid < 0)
+		return false;
+
+	return true;
+}
+
+
+bool RaspberryRemoteDaemon::daemonize()
+{
+	if(getppid() == -1)
+		return false;
+
+	if(!doFork())
+		return false;
+
+	if(setsid() < 0)
+		return false;
+
+	if(!doFork())
+		return false;
+
+	umask(0);
+	chdir("/");
+
+	freopen("/dev/null", "r", stdin);
+	freopen("/dev/null", "w", stdout);
+	freopen("/dev/null", "w", stderr);
+
+	return true;
+}
+
+
+int main(int argc, char* argv[])
+{
+	if(argc == 2 && (argv[1] == string("-d") || argv[1] == string("--daemon")))
+	{
+		if(!RaspberryRemoteDaemon::daemonize())
+			return -1;
+	}
+
 	RaspberryRemoteDaemon rrd;
 
 	if(!rrd.init())

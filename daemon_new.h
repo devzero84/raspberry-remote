@@ -4,6 +4,9 @@
 #include <list>
 #include <string>
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "RCSwitch.h"
 
 
@@ -24,6 +27,7 @@ class RaspberryRemoteDaemon
 		void processInput();
 		unsigned short getPlugAddr();
 		void dumpPowerStateOn();
+		static bool daemonize();
 
 
 	private:
@@ -32,6 +36,7 @@ class RaspberryRemoteDaemon
 		void savePowerState(bool stateOn);
 		bool getPowerState();
 		void writePowerStateToSocket();
+		static bool doFork();
 
 		RCSwitch* mRCSwitch;
 		int mSrvSockFd;
