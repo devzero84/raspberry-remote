@@ -12,7 +12,7 @@ daemon: RCSwitch.o daemon.o
 	$(CXX) -pthread $+ -o $@ $(CXXFLAGS) $(LDFLAGS)
 
 daemon_new: RCSwitch.o daemon_new.o
-	$(CXX) -pthread $+ -o $@ $(CXXFLAGS) $(LDFLAGS)
+	$(CXX) $+ -o $@ $(CXXFLAGS) $(LDFLAGS)
 
 send: RCSwitch.o send.o
 	$(CXX) $+ -o $@ $(CXXFLAGS) $(LDFLAGS)

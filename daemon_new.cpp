@@ -19,6 +19,7 @@ RaspberryRemoteDaemon::RaspberryRemoteDaemon()
 	, mCmd(STATE)
 {
 	mRCSwitch = new RCSwitch();
+	FD_ZERO(&mSockFdSet);
 }
 
 
@@ -41,7 +42,7 @@ bool RaspberryRemoteDaemon::init()
 	mRCSwitch->enableTransmit(0);
 
 
-	mSrvSockFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	mSrvSockFd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
 
 	if(mSrvSockFd == -1)
 	{
@@ -75,7 +76,7 @@ bool RaspberryRemoteDaemon::init()
 }
 
 
-void RaspberryRemoteDaemon::serverLoop()
+bool RaspberryRemoteDaemon::serverLoop()
 {
 	cout << __PRETTY_FUNCTION__ << endl;
 
@@ -84,24 +85,65 @@ void RaspberryRemoteDaemon::serverLoop()
 
 	while(true)
 	{
-		mCliSockFd = accept(mSrvSockFd, reinterpret_cast<sockaddr*>(&cliAddr), &cliLen);
+		struct timeval tv;
+		tv.tv_sec = 1;
+		tv.tv_usec = 0;
 
-		cout << __PRETTY_FUNCTION__ << endl;
-
-		char buffer[20];
-		int n = read(mCliSockFd, buffer, sizeof(buffer));
-		cout << "\tread: " << n << endl;
-		buffer[n] = '\0';
-		cout << "\tbuffer: '" << buffer << "'" << endl;
-
-		setInput(buffer);
-		if(parseInput())
+		FD_SET(mSrvSockFd, &mSockFdSet);
+		int ret = select(mSrvSockFd + 1, &mSockFdSet, NULL, NULL, &tv);
+		if(ret > 0)
 		{
-			processInput();
-			dumpPowerStateOn();
+			if(FD_ISSET(mSrvSockFd, &mSockFdSet))
+			{
+				mCliSockFd = accept(mSrvSockFd, reinterpret_cast<sockaddr*>(&cliAddr), &cliLen);
+
+				cout << __PRETTY_FUNCTION__ << "\n\taccept()" << endl;
+
+				char buffer[20];
+				int n = read(mCliSockFd, buffer, sizeof(buffer));
+				cout << "\tread: " << n << endl;
+				buffer[n] = '\0';
+				cout << "\tbuffer: '" << buffer << "'" << endl;
+
+				setInput(buffer);
+				if(parseInput())
+				{
+					processInput();
+					dumpPowerStateOn();
+				}
+				close(mCliSockFd);
+			}
 		}
-		close(mCliSockFd);
+		else if(ret == 0)
+		{
+			cout << __PRETTY_FUNCTION__ << "\n\tselect(): timeout" << endl;
+
+			if(mDelayPending.size() > 0)
+			{
+				for(map<unsigned short, pair<bool, unsigned short> >::iterator it = mDelayPending.begin(); it != mDelayPending.end(); ++it)
+				{
+					it->second.second--;
+
+					cout << "\t\taddr   : " << it->first << endl;
+					cout << "\t\ton/off : " << it->second.first << endl;
+					cout << "\t\tdelay  : " << it->second.second << endl;
+
+					if(it->second.second == 0)
+					{
+						mSystemCode = it->first >> 5;
+						mUnitCode   = it->first & ((1<<5)-1);
+						mCmd        = it->second.first ? ON : OFF;
+						processInput();
+					}
+				}
+			}
+		}
+		else
+		{
+			return false;
+		}
 	}
+	return true;
 }
 
 
@@ -245,6 +287,20 @@ void RaspberryRemoteDaemon::processInput()
 {
 	cout << __PRETTY_FUNCTION__ << endl;
 
+	if(mCmd != STATE)
+	{
+		if(mDelay == 0)
+		{
+			mDelayPending.erase(getPlugAddr());
+		}
+		else
+		{
+			mDelayPending[getPlugAddr()] = pair<bool, unsigned short>(mCmd == ON ? true : false, mDelay);
+			writePowerStateToSocket();
+			return;
+		}
+	}
+
 	char* systemCodePtr = const_cast<char*>(bitset<5>(mSystemCode).to_string().c_str());
 
 	switch(mCmd)
@@ -386,7 +442,5 @@ int main(int argc, char* argv[])
 	if(!rrd.init())
 		return -1;
 
-	rrd.serverLoop();
-
-	return 0;
+	return rrd.serverLoop() ? 0 : -1;
 }

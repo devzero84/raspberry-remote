@@ -2,6 +2,7 @@
 #define DAEMON_NEW_H
 
 #include <list>
+#include <map>
 #include <string>
 
 #include <sys/stat.h>
@@ -21,7 +22,7 @@ class RaspberryRemoteDaemon
 		RaspberryRemoteDaemon();
 		~RaspberryRemoteDaemon();
 		bool init();
-		void serverLoop();
+		bool serverLoop();
 		void setInput(string inputStr);
 		bool parseInput();
 		void processInput();
@@ -41,12 +42,14 @@ class RaspberryRemoteDaemon
 		RCSwitch* mRCSwitch;
 		int mSrvSockFd;
 		int mCliSockFd;
+		fd_set mSockFdSet;
 		unsigned short mSystemCode;
 		unsigned short mUnitCode;
 		unsigned short mDelay;
 		string mRecvStr;
 		rcswitch_cmd_t mCmd;
 		list<unsigned short> mPowerState;
+		map<unsigned short, pair<bool, unsigned short> > mDelayPending;
 };
 
 #endif /* DAEMON_NEW_H */
